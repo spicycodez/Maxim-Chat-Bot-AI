@@ -40,7 +40,10 @@ class GroqProvider:
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                text = data["choices"][0]["message"]["content"].strip()
+                text = data.get("choices", [{}])[0].get("message", {}).get("content", "") or ""
+                text = text.strip()
+                if not text:
+                    raise ValueError("Groq returned empty response")
                 logger.debug(f"Groq response ({len(text)} chars)")
                 return text
         except httpx.HTTPStatusError as e:

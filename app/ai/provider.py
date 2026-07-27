@@ -29,7 +29,7 @@ def get_ai_provider(provider_name: str | None = None) -> AIProvider:
     elif name == "groq":
         return GroqProvider(api_key=cfg.AI_API_KEY, model=cfg.AI_MODEL or "llama-3.3-70b-versatile")
     elif name == "openrouter":
-        return OpenRouterProvider(api_key=cfg.AI_API_KEY, model=cfg.AI_MODEL or "google/gemini-2.0-flash-exp:free")
+        return OpenRouterProvider(api_key=cfg.AI_API_KEY, model=cfg.AI_MODEL or "google/gemma-4-31b-it:free")
     else:
         raise ValueError(f"Unknown AI provider: {name}")
 

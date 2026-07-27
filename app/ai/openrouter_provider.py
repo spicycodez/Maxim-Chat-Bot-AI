@@ -42,7 +42,10 @@ class OpenRouterProvider:
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                text = data["choices"][0]["message"]["content"].strip()
+                text = data.get("choices", [{}])[0].get("message", {}).get("content", "") or ""
+                text = text.strip()
+                if not text:
+                    raise ValueError("OpenRouter returned empty response")
                 logger.debug(f"OpenRouter response ({len(text)} chars)")
                 return text
         except httpx.HTTPStatusError as e:
