@@ -3,7 +3,7 @@ import asyncio
 import time
 from datetime import datetime, timezone
 from loguru import logger
-from pyrogram import Client
+from pyrogram import Client, filters
 
 import app.config as cfg
 from app.database import connect_db, disconnect_db

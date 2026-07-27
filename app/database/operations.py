@@ -11,24 +11,36 @@ from app.database import get_collection
 # ═══════════════════════════════════════════════════════════
 async def upsert_user(user_id: int, username: str = "", first_name: str = "", last_name: str = "") -> None:
     col = get_collection("users")
-    await col.update_one(
-        {"user_id": user_id},
-        {
-            "$set": {
-                "username": username,
-                "first_name": first_name,
-                "last_name": last_name,
-                "updated_at": datetime.now(timezone.utc),
+    existing = await col.find_one({"user_id": user_id})
+    if existing:
+        await col.update_one(
+            {"user_id": user_id},
+            {
+                "$set": {
+                    "username": username,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "updated_at": datetime.now(timezone.utc),
+                },
+                "$inc": {"message_count": 1},
             },
-            "$setOnInsert": {
-                "created_at": datetime.now(timezone.utc),
-                "message_count": 0,
-                "reply_count": 0,
+        )
+    else:
+        await col.update_one(
+            {"user_id": user_id},
+            {
+                "$set": {
+                    "username": username,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "updated_at": datetime.now(timezone.utc),
+                    "created_at": datetime.now(timezone.utc),
+                    "message_count": 1,
+                    "reply_count": 0,
+                },
             },
-            "$inc": {"message_count": 1},
-        },
-        upsert=True,
-    )
+            upsert=True,
+        )
 
 
 async def increment_user_replies(user_id: int) -> None:

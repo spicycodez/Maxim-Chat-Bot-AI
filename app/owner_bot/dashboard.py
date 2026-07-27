@@ -1,4 +1,5 @@
-Owner Dashboard Bot — separate Telegram Bot Token for admin control.
+"""
+Owner Dashboard Bot - separate Telegram Bot Token for admin control.
 
 All commands are owner-only.
 """
