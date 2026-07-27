@@ -1,7 +1,11 @@
-"""Thin async wrappers around MongoDB collections used by the assistant."""
+"""Thin async wrappers around MongoDB collections used by the assistant.
+
+All memory (messages, summaries, memories) is now stored PER USER.
+Each user's conversation data is isolated by (chat_id, user_id).
+"""
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from loguru import logger
 from app.database import get_collection
 
@@ -100,7 +104,8 @@ async def increment_group_replies(group_id: int) -> None:
 
 
 # ═══════════════════════════════════════════════════════════
-#  Messages  (short-term memory)
+#  Messages  (short-term memory) — PER USER
+#  Keyed by (chat_id, user_id) so each user has isolated context
 # ═══════════════════════════════════════════════════════════
 async def save_message(
     chat_id: int,
@@ -122,33 +127,37 @@ async def save_message(
     )
 
 
-async def get_recent_messages(chat_id: int, limit: int = 20) -> list[dict]:
+async def get_recent_messages(chat_id: int, user_id: int, limit: int = 20) -> list[dict]:
+    """Get recent messages for a SPECIFIC user in a chat."""
     col = get_collection("messages")
     cursor = col.find(
-        {"chat_id": chat_id},
+        {"chat_id": chat_id, "user_id": user_id},
         {"text": 1, "user_id": 1, "is_bot": 1, "created_at": 1},
     ).sort("created_at", 1).limit(limit)
     return await cursor.to_list(length=limit)
 
 
-async def get_message_count_since(chat_id: int, since: datetime) -> int:
+async def get_message_count_since(chat_id: int, user_id: int, since: datetime) -> int:
+    """Count messages for a SPECIFIC user since a time."""
     col = get_collection("messages")
-    return await col.count_documents({"chat_id": chat_id, "created_at": {"$gte": since}})
+    return await col.count_documents({"chat_id": chat_id, "user_id": user_id, "created_at": {"$gte": since}})
 
 
-async def delete_old_messages(chat_id: int, before: datetime) -> int:
+async def delete_old_messages(chat_id: int, user_id: int, before: datetime) -> int:
+    """Delete old messages for a SPECIFIC user before a time."""
     col = get_collection("messages")
-    result = await col.delete_many({"chat_id": chat_id, "created_at": {"$lt": before}})
+    result = await col.delete_many({"chat_id": chat_id, "user_id": user_id, "created_at": {"$lt": before}})
     return result.deleted_count
 
 
 # ═══════════════════════════════════════════════════════════
-#  Summaries  (long-term memory)
+#  Summaries  (long-term memory) — PER USER
+#  Each user has their own summary per chat
 # ═══════════════════════════════════════════════════════════
-async def save_summary(chat_id: int, summary: str) -> None:
+async def save_summary(chat_id: int, user_id: int, summary: str) -> None:
     col = get_collection("summaries")
     await col.update_one(
-        {"chat_id": chat_id},
+        {"chat_id": chat_id, "user_id": user_id},
         {
             "$set": {"summary": summary, "updated_at": datetime.now(timezone.utc)},
             "$setOnInsert": {"created_at": datetime.now(timezone.utc)},
@@ -157,19 +166,19 @@ async def save_summary(chat_id: int, summary: str) -> None:
     )
 
 
-async def get_summary(chat_id: int) -> str | None:
+async def get_summary(chat_id: int, user_id: int) -> str | None:
     col = get_collection("summaries")
-    doc = await col.find_one({"chat_id": chat_id}, {"summary": 1})
+    doc = await col.find_one({"chat_id": chat_id, "user_id": user_id}, {"summary": 1})
     return doc["summary"] if doc else None
 
 
 # ═══════════════════════════════════════════════════════════
-#  Memories  (key-value facts extracted from summaries)
+#  Memories  (key-value facts) — PER USER
 # ═══════════════════════════════════════════════════════════
-async def save_memory(chat_id: int, key: str, value: str) -> None:
+async def save_memory(chat_id: int, user_id: int, key: str, value: str) -> None:
     col = get_collection("memories")
     await col.update_one(
-        {"chat_id": chat_id, "key": key},
+        {"chat_id": chat_id, "user_id": user_id, "key": key},
         {
             "$set": {"value": value, "updated_at": datetime.now(timezone.utc)},
             "$setOnInsert": {"created_at": datetime.now(timezone.utc)},
@@ -178,9 +187,36 @@ async def save_memory(chat_id: int, key: str, value: str) -> None:
     )
 
 
-async def get_memories(chat_id: int) -> list[dict]:
+async def get_memories(chat_id: int, user_id: int) -> list[dict]:
     col = get_collection("memories")
-    return await col.find({"chat_id": chat_id}, {"key": 1, "value": 1}).to_list(length=100)
+    return await col.find({"chat_id": chat_id, "user_id": user_id}, {"key": 1, "value": 1}).to_list(length=100)
+
+
+# ═══════════════════════════════════════════════════════════
+#  Weekly Cleanup — delete per-user data older than 7 days
+# ═══════════════════════════════════════════════════════════
+async def cleanup_old_user_data(days: int = 7) -> dict:
+    """Delete messages, summaries, and memories older than N days.
+    Returns counts of deleted documents per collection."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    results = {}
+
+    # Clean messages
+    col = get_collection("messages")
+    r = await col.delete_many({"created_at": {"$lt": cutoff}})
+    results["messages"] = r.deleted_count
+
+    # Clean summaries (updated_at)
+    col = get_collection("summaries")
+    r = await col.delete_many({"updated_at": {"$lt": cutoff}})
+    results["summaries"] = r.deleted_count
+
+    # Clean memories (updated_at)
+    col = get_collection("memories")
+    r = await col.delete_many({"updated_at": {"$lt": cutoff}})
+    results["memories"] = r.deleted_count
+
+    return results
 
 
 # ═══════════════════════════════════════════════════════════
@@ -338,3 +374,14 @@ async def db_ping() -> bool:
         return True
     except Exception:
         return False
+
+
+# ═══════════════════════════════════════════════════════════
+#  Get all unique user_ids that have messages (for cleanup)
+# ═══════════════════════════════════════════════════════════
+async def get_active_user_ids() -> list[int]:
+    """Return list of user_ids that have messages stored."""
+    col = get_collection("messages")
+    pipeline = [{"$group": {"_id": "$user_id"}}]
+    results = await col.aggregate(pipeline).to_list(length=10000)
+    return [r["_id"] for r in results]

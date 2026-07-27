@@ -22,6 +22,7 @@ from pyrogram.types import (
 import app.config as cfg
 from app.database import operations as db_ops
 from app.database import db as db_module
+from app.database import get_collection
 from app.personality.manager import PersonalityManager
 from app.memory.manager import MemoryManager
 from app.ai.response_engine import ResponseEngine
@@ -117,8 +118,8 @@ class OwnerDashboard:
             "`/status` — System status\n"
             "`/personality` — View personality\n"
             "`/setprompt <text>` — Set personality\n"
-            "`/memory [chat_id]` — View memory/summary\n"
-            "`/summary [chat_id]` — Force generate summary\n"
+            "`/memory [chat_id] [user_id]` — View per-user memory/summary\n"
+            "`/summary <chat_id> <user_id>` — Force generate summary\n"
             "`/logs [N]` — Recent N logs\n"
             "`/reload` — Reload settings\n"
             "`/restart` — Restart the bot\n"
@@ -184,14 +185,14 @@ class OwnerDashboard:
             f"\u2699\ufe0f <b>Current Settings</b>\n\n"
             f"AI Provider: <code>{cfg.AI_PROVIDER}</code>\n"
             f"AI Model: <code>{cfg.AI_MODEL or 'default'}</code>\n"
-            f"Fallback: {'Enabled' if cfg.FALLBACK_ENABLED else 'Disabled'}\n"
-            f"Fallback Order: {', '.join(cfg.FALLBACK_ORDER)}\n"
             f"Short-term Limit: {cfg.SHORT_TERM_LIMIT}\n"
             f"Summary Trigger: {cfg.SUMMARY_TRIGGER_COUNT} msgs / {cfg.SUMMARY_TRIGGER_MINUTES} min\n"
             f"Reply Cooldown: {cfg.REPLY_COOLDOWN}s\n"
             f"Typing Delay: {cfg.TYPING_DELAY_MIN}-{cfg.TYPING_DELAY_MAX}s\n"
             f"Auto Summary: {'Enabled' if cfg.AUTO_SUMMARY_ENABLED else 'Disabled'}\n"
             f"Auto Messages: {'Enabled' if cfg.AUTO_MESSAGE_ENABLED else 'Disabled'}\n"
+            f"Weekly Cleanup: Enabled (7 days)\n"
+            f"Memory Mode: Per-User Isolated\n"
             f"Whitelist Only: {'Yes' if cfg.WHITELIST_ONLY else 'No'}\n"
             f"Log Level: {cfg.LOG_LEVEL}\n"
         )
@@ -227,16 +228,19 @@ class OwnerDashboard:
 
     async def cmd_memory(self, client: Client, message: Message):
         args = message.text.split()
-        chat_id = int(args[1]) if len(args) > 1 else None
+        # /memory <chat_id> <user_id>  OR  /memory <chat_id>  (lists users)
+        chat_id = int(args[1]) if len(args) > 1 and args[1].lstrip('-').isdigit() else None
+        user_id = int(args[2]) if len(args) > 2 and args[2].lstrip('-').isdigit() else None
 
-        if chat_id:
-            summary = await db_ops.get_summary(chat_id)
-            memories = await db_ops.get_memories(chat_id)
+        if chat_id and user_id:
+            # Show specific user's memory in a chat
+            summary = await db_ops.get_summary(chat_id, user_id)
+            memories = await db_ops.get_memories(chat_id, user_id)
             msg_count = await db_ops.get_message_count_since(
-                chat_id,
+                chat_id, user_id,
                 datetime.now(timezone.utc),
             )
-            text = f"\U0001f9e0 <b>Memory for {chat_id}</b>\n\n"
+            text = f"\U0001f9e0 <b>Memory for user {user_id} in {chat_id}</b>\n\n"
             text += f"Short-term messages: {msg_count}\n\n"
             if summary:
                 text += f"<b>Summary:</b>\n{summary}\n\n"
@@ -248,25 +252,46 @@ class OwnerDashboard:
             else:
                 text += "<b>Key Facts:</b> None yet"
             await message.reply_text(trunc_text(text))
+        elif chat_id:
+            # List all users who have memory in this chat
+            col = get_collection("messages")
+            pipeline = [
+                {"$match": {"chat_id": chat_id}},
+                {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
+                {"$sort": {"count": -1}},
+            ]
+            user_stats = await col.aggregate(pipeline).to_list(length=100)
+            if not user_stats:
+                await message.reply_text(f"No user data for chat {chat_id}.")
+                return
+            text = f"\U0001f9e0 <b>Users in {chat_id}</b>\n\n"
+            for u in user_stats[:30]:
+                uid = u["_id"]
+                cnt = u["count"]
+                summary = await db_ops.get_summary(chat_id, uid)
+                has_sum = "\u2705" if summary else "\u274c"
+                text += f"{has_sum} <code>{uid}</code> | {cnt} msgs\n"
+            text += f"\n\nUse: /memory {chat_id} <user_id>"
+            await message.reply_text(trunc_text(text))
         else:
             groups = await db_ops.get_all_groups()
             text = "\U0001f9e0 <b>Memory Overview</b>\n\n"
             for g in groups[:15]:
                 gid = g["group_id"]
                 title = g.get("title", "Unknown")[:20]
-                summary = await db_ops.get_summary(gid)
-                has_summary = "\u2705" if summary else "\u274c"
-                text += f"{has_summary} <code>{gid}</code> | {title}\n"
+                text += f"\U0001f4c1 <code>{gid}</code> | {title}\n"
+            text += "\nUse: /memory <chat_id> to see users"
             await message.reply_text(text or "No groups yet.")
 
     async def cmd_summary(self, client: Client, message: Message):
         args = message.text.split()
-        chat_id = int(args[1]) if len(args) > 1 else None
-        if not chat_id:
-            await message.reply_text("Usage: `/summary <chat_id>`")
+        chat_id = int(args[1]) if len(args) > 1 and args[1].lstrip('-').isdigit() else None
+        user_id = int(args[2]) if len(args) > 2 and args[2].lstrip('-').isdigit() else None
+        if not chat_id or not user_id:
+            await message.reply_text("Usage: `/summary <chat_id> <user_id>`")
             return
-        await message.reply_text(f"\u23f3 Generating summary for {chat_id}...")
-        result = await self.memory_mgr.generate_summary(chat_id)
+        await message.reply_text(f"\u23f3 Generating summary for user {user_id} in {chat_id}...")
+        result = await self.memory_mgr.generate_summary(chat_id, user_id)
         if result:
             await message.reply_text(f"\u2705 Summary generated:\n\n{result}")
         else:

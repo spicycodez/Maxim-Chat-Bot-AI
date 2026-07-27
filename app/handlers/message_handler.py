@@ -15,7 +15,12 @@ import app.config as cfg
 
 
 class MessageHandler:
-    """Processes incoming Telegram messages, decides whether to reply, and generates responses."""
+    """Processes incoming Telegram messages, decides whether to reply, and generates responses.
+
+    - In PRIVATE chat: ALWAYS replies to every message (no mention needed)
+    - In GROUP chat: replies on @mention, reply-to, or 15% random
+    - Per-user memory isolation: each user's context is separate
+    """
 
     def __init__(
         self,
@@ -39,55 +44,44 @@ class MessageHandler:
             self._my_username = (self.client.me.username or "").lower()
             self._my_first_name = (self.client.me.first_name or "").lower()
 
-    # ── Filter checks ───────────────────────────────────
+    # -- Filter checks ------------------------------------------
 
     async def should_process(self, message: Message) -> bool:
         """Return True if the message passes all filter checks."""
-        # Ignore empty messages
         if not message.text or not message.text.strip():
             return False
 
-        # Ignore bots
         if message.from_user and message.from_user.is_bot:
             return False
 
-        # Ignore commands (messages starting with /)
         if message.text.startswith("/"):
             return False
 
-        # Ignore forwarded messages
         if message.forward_date:
             return False
 
-        # Ignore channel posts
         if message.sender_chat:
             return False
 
-        # Ignore deleted / service messages
         if message.empty:
             return False
 
         user_id = message.from_user.id if message.from_user else 0
 
-        # Check blacklist
         if await db_ops.is_blacklisted(user_id):
             return False
 
-        # Check whitelist-only mode
         if cfg.WHITELIST_ONLY and not await db_ops.is_whitelisted(user_id):
             return False
 
-        # Check if user is in config blacklist
         if user_id in cfg.BLACKLISTED_USERS:
             return False
 
-        # Check group enabled
         chat_id = message.chat.id
         if message.chat.type in ("group", "supergroup"):
             if not await db_ops.is_group_enabled(chat_id):
                 return False
 
-        # Ignore very short messages (< 2 chars)
         if len(message.text.strip()) < 2:
             return False
 
@@ -97,51 +91,45 @@ class MessageHandler:
         """Check if the assistant is mentioned via @mention, text mention, or reply."""
         self._ensure_me()
 
-        # 1. Check Telegram entities (actual @mentions and text_mentions)
         if message.entities:
             for ent in message.entities:
-                # @username mention
                 if ent.type == "mention":
                     mentioned_text = message.text[ent.offset:ent.offset + ent.length].lower()
                     mentioned_text = mentioned_text.lstrip("@")
                     if mentioned_text == self._my_username:
-                        logger.debug(f"Mentioned via @username: {mentioned_text}")
                         return True
 
-                # Text mention (when user is mentioned without @, e.g. in name)
                 if ent.type == "text_mention":
                     if ent.user and ent.user.id == self._my_user_id:
-                        logger.debug("Mentioned via text_mention entity")
                         return True
 
-        # 2. Check if replying to our message
         if message.reply_to_message and message.reply_to_message.from_user:
             if message.reply_to_message.from_user.id == self._my_user_id:
-                logger.debug("Mentioned via reply")
                 return True
 
-        # 3. Text-based fallback: check if username/first_name appears in text
         text = (message.text or "").lower()
         if self._my_username and self._my_username in text:
-            logger.debug(f"Mentioned via text: @{self._my_username}")
             return True
         if self._my_first_name and self._my_first_name in text:
-            logger.debug(f"Mentioned via text: {self._my_first_name}")
             return True
 
         return False
 
     def _should_reply(self, message: Message) -> bool:
-        """Determine if the message warrants a reply."""
-        # In private chats, always reply
+        """Determine if the message warrants a reply.
+
+        PRIVATE CHAT: Always reply — no mention/tag needed.
+        GROUP CHAT: Reply on mention/tag/reply-to-bot, or 15% random.
+        """
+        # Private chat: ALWAYS reply
         if message.chat.type == "private":
             return True
 
-        # In groups: always reply if mentioned (@tag, reply, name)
+        # Group: always reply if mentioned
         if self._is_mentioned(message):
             return True
 
-        # For group chats, probabilistic response for non-directed messages
+        # Group: 15% random for non-directed messages
         if message.chat.type in ("group", "supergroup"):
             return random.random() < 0.15
 
@@ -158,7 +146,7 @@ class MessageHandler:
     async def _set_cooldown(self, chat_id: int) -> None:
         self._cooldowns[chat_id] = time.time()
 
-    # ── Main handler ─────────────────────────────────────
+    # -- Main handler -------------------------------------------
 
     async def handle(self, message: Message) -> None:
         """Main entry point for processing a message."""
@@ -172,6 +160,7 @@ class MessageHandler:
                 return
 
             chat_id = message.chat.id
+            user_id = message.from_user.id if message.from_user else 0
 
             # Cooldown check (groups only) — skip if mentioned
             is_mentioned = self._is_mentioned(message)
@@ -179,7 +168,6 @@ class MessageHandler:
                 if await self._check_cooldown(chat_id):
                     return
 
-            user_id = message.from_user.id if message.from_user else 0
             user_name = (
                 message.from_user.first_name or "User"
                 if message.from_user
@@ -187,7 +175,7 @@ class MessageHandler:
             )
             text = message.text.strip()
 
-            # Detect language (for logging / future use)
+            # Detect language
             lang = self.detector.detect(text)
             logger.debug(f"Detected language: {lang} for: {text[:50]}")
 
@@ -205,7 +193,7 @@ class MessageHandler:
                     username=message.chat.username or "",
                 )
 
-            # Save message to DB (short-term memory)
+            # Save message to DB (per-user short-term memory)
             await db_ops.save_message(
                 chat_id=chat_id,
                 user_id=user_id,
@@ -213,14 +201,14 @@ class MessageHandler:
                 is_bot=False,
                 message_id=message.id,
             )
-            self.memory.register_message(chat_id)
+            self.memory.register_message(chat_id, user_id)
 
-            # Check if summary is needed
-            if await self.memory.should_summarize(chat_id):
-                asyncio.create_task(self.memory.generate_summary(chat_id))
+            # Check if summary is needed for THIS user
+            if await self.memory.should_summarize(chat_id, user_id):
+                asyncio.create_task(self.memory.generate_summary(chat_id, user_id))
 
-            # Generate reply
-            reply_text = await self.engine.generate_reply(chat_id, text, user_name)
+            # Generate reply using per-user context
+            reply_text = await self.engine.generate_reply(chat_id, user_id, text, user_name)
 
             if not reply_text:
                 return
@@ -232,10 +220,10 @@ class MessageHandler:
             # Send reply
             await message.reply_text(reply_text)
 
-            # Save assistant's reply to DB
+            # Save assistant's reply to DB (per-user)
             await db_ops.save_message(
                 chat_id=chat_id,
-                user_id=self._my_user_id,
+                user_id=user_id,
                 text=reply_text,
                 is_bot=True,
             )
@@ -246,7 +234,7 @@ class MessageHandler:
                 await db_ops.increment_group_replies(chat_id)
                 await self._set_cooldown(chat_id)
 
-            logger.info(f"Replied to {user_name} in {chat_id}")
+            logger.info(f"Replied to {user_name} (id={user_id}) in {chat_id}")
 
         except Exception as e:
             logger.error(f"MessageHandler error: {e}")

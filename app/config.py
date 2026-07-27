@@ -22,17 +22,9 @@ MONGO_URL: str = os.getenv("MONGO_URL", "")
 DB_NAME: str = os.getenv("DB_NAME", "persona_ai")
 
 # ── AI Provider ───────────────────────────────────────────
-AI_PROVIDER: str = os.getenv("AI_PROVIDER", "gemini").lower()  # gemini | groq | openrouter
+AI_PROVIDER: str = os.getenv("AI_PROVIDER", "openrouter").lower()  # openrouter only
 AI_API_KEY: str = os.getenv("AI_API_KEY", "")
 AI_MODEL: str = os.getenv("AI_MODEL", "")  # leave empty for provider default
-
-# ── Fallback ──────────────────────────────────────────────
-FALLBACK_ENABLED: bool = os.getenv("FALLBACK_ENABLED", "true").lower() in ("true", "1", "yes")
-FALLBACK_ORDER: list[str] = [
-    p.strip().lower()
-    for p in os.getenv("FALLBACK_ORDER", "groq,openrouter").split(",")
-    if p.strip()
-]
 
 # ── Memory ────────────────────────────────────────────────
 SHORT_TERM_LIMIT: int = int(os.getenv("SHORT_TERM_LIMIT", "20"))

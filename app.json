@@ -41,7 +41,7 @@
       "value": "persona_ai"
     },
     "AI_PROVIDER": {
-      "description": "AI provider: openrouter, groq, or gemini",
+      "description": "AI provider (openrouter only)",
       "required": false,
       "value": "openrouter"
     },
@@ -53,11 +53,6 @@
       "description": "AI model name",
       "required": false,
       "value": "nvidia/nemotron-3-super-120b-a12b:free"
-    },
-    "FALLBACK_ORDER": {
-      "description": "Comma-separated fallback provider order",
-      "required": false,
-      "value": "openrouter"
     },
     "AUTO_MESSAGE_ENABLED": {
       "description": "Enable proactive group messages",

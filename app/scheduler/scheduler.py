@@ -1,10 +1,3 @@
-"""APScheduler-based background jobs.
-
-- Auto-summarize memory periodically
-- Cleanup old logs
-- Proactive auto-messages in groups
-"""
-
 import random
 from datetime import datetime, timezone, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -92,7 +85,6 @@ def _get_time_slot() -> str:
 def _pick_message() -> str:
     """Pick a random message appropriate for the current time of day."""
     slot = _get_time_slot()
-    # 70% chance to pick time-appropriate, 30% general
     pool = _MESSAGES[slot] if random.random() < 0.7 else _MESSAGES["general"]
     return random.choice(pool)
 
@@ -134,6 +126,16 @@ class AppScheduler:
             replace_existing=True,
         )
 
+        # Weekly cleanup of per-user data (messages, summaries, memories older than 7 days)
+        self.scheduler.add_job(
+            self._weekly_user_data_cleanup,
+            trigger=IntervalTrigger(weeks=1),
+            id="weekly_cleanup",
+            name="Weekly User Data Cleanup",
+            replace_existing=True,
+        )
+        logger.info("Weekly user data cleanup scheduled (every 7 days)")
+
         self.scheduler.start()
         logger.info("Scheduler started")
 
@@ -142,7 +144,7 @@ class AppScheduler:
         logger.info("Scheduler stopped")
 
     async def _auto_summarize(self) -> None:
-        """Run auto-summary on all active groups."""
+        """Run auto-summary on all active users in groups."""
         try:
             logger.debug("Running auto-summary...")
             await self.memory_manager.auto_summarize_all()
@@ -164,7 +166,6 @@ class AppScheduler:
                 logger.debug("Auto-messages: no enabled groups")
                 return
 
-            # Pick one random message for this round (same msg to all groups to avoid spam)
             message = _pick_message()
             slot = _get_time_slot()
             sent = 0
@@ -197,3 +198,17 @@ class AppScheduler:
             logger.info(f"Cleaned up {result.deleted_count} old log entries")
         except Exception as e:
             logger.error(f"Log cleanup failed: {e}")
+
+    async def _weekly_user_data_cleanup(self) -> None:
+        """Delete per-user messages, summaries, and memories older than 7 days."""
+        try:
+            results = await db_ops.cleanup_old_user_data(days=7)
+            total = results.get("messages", 0) + results.get("summaries", 0) + results.get("memories", 0)
+            logger.info(f"Weekly cleanup: removed {results.get('messages', 0)} msgs, {results.get('summaries', 0)} summaries, {results.get('memories', 0)} memories")
+            await db_ops.save_log(
+                "INFO", "Weekly Cleanup",
+                f"Removed {total} total records older than 7 days"
+            )
+        except Exception as e:
+            logger.error(f"Weekly cleanup failed: {e}")
+            await db_ops.save_log("ERROR", "Scheduler", f"Weekly cleanup failed: {e}")

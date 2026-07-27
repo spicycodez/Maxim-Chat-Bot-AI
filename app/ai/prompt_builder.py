@@ -1,9 +1,12 @@
 """Builds the final prompt sent to the AI provider.
 
+Per-user context: only the current user's conversation history,
+summary, and memories are included — not other users' data.
+
 Order:
   1. System Prompt (personality)
-  2. Long-term summary
-  3. Recent conversation (short-term memory)
+  2. Long-term summary for THIS user
+  3. Recent conversation for THIS user (short-term memory)
   4. Current message
 """
 
@@ -16,34 +19,34 @@ class PromptBuilder:
     def __init__(self, personality: str = ""):
         self._personality = personality
 
-    async def build(self, chat_id: int, current_message: str, user_name: str = "User") -> tuple[str, str]:
-        """Return (system_prompt, user_prompt)."""
+    async def build(self, chat_id: int, user_id: int, current_message: str, user_name: str = "User") -> tuple[str, str]:
+        """Return (system_prompt, user_prompt) using only THIS user's memory."""
         # 1. Personality as system prompt
         system_prompt = self._personality or "You are a helpful Telegram assistant. Be concise and natural."
 
-        # 2. Long-term summary
-        summary = await db_ops.get_summary(chat_id)
-        memories = await db_ops.get_memories(chat_id)
+        # 2. Long-term summary for THIS user only
+        summary = await db_ops.get_summary(chat_id, user_id)
+        memories = await db_ops.get_memories(chat_id, user_id)
 
-        # 3. Recent conversation
-        recent = await db_ops.get_recent_messages(chat_id, limit=cfg.SHORT_TERM_LIMIT)
+        # 3. Recent conversation for THIS user only
+        recent = await db_ops.get_recent_messages(chat_id, user_id, limit=cfg.SHORT_TERM_LIMIT)
 
         # 4. Assemble user prompt
         parts = []
 
         if summary:
-            parts.append(f"[Conversation Summary]\n{summary}")
+            parts.append(f"[Conversation Summary with this user]\n{summary}")
 
         if memories:
             mem_lines = "\n".join(f"- {m['key']}: {m['value']}" for m in memories)
-            parts.append(f"[Known Facts]\n{mem_lines}")
+            parts.append(f"[Known Facts about this user]\n{mem_lines}")
 
         if recent:
             conv_lines = []
             for msg in recent:
-                role = "Assistant" if msg.get("is_bot") else str(msg.get("user_id", "User"))
+                role = "Assistant" if msg.get("is_bot") else "User"
                 conv_lines.append(f"{role}: {msg['text']}")
-            parts.append("[Recent Conversation]\n" + "\n".join(conv_lines))
+            parts.append("[Recent Conversation with this user]\n" + "\n".join(conv_lines))
 
         parts.append(f"{user_name}: {current_message}")
 
