@@ -1,9 +1,19 @@
+# Session files
+*.session
+*.session-journal
+
+# Logs
+*.log
+app/logs/
+
+# Env
 .env
+
+# Python
 __pycache__/
 *.pyc
-*.pyo
-app/logs/
-.venv/
-*.egg-info/
-.idea/
-.vscode/
+venv/
+
+# Temp
+test_*.py
+start_bot.sh

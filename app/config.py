@@ -49,6 +49,10 @@ MAX_REPLY_LENGTH: int = int(os.getenv("MAX_REPLY_LENGTH", "4096"))
 AUTO_SUMMARY_ENABLED: bool = os.getenv("AUTO_SUMMARY_ENABLED", "true").lower() in ("true", "1", "yes")
 AUTO_SUMMARY_INTERVAL: int = int(os.getenv("AUTO_SUMMARY_INTERVAL", "30"))  # minutes
 
+# ── Auto Messages (proactive group messaging) ──────────
+AUTO_MESSAGE_ENABLED: bool = os.getenv("AUTO_MESSAGE_ENABLED", "true").lower() in ("true", "1", "yes")
+AUTO_MESSAGE_INTERVAL: int = int(os.getenv("AUTO_MESSAGE_INTERVAL", "30"))  # minutes
+
 # ── Misc ──────────────────────────────────────────────────
 LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
 BLACKLISTED_USERS: list[int] = [

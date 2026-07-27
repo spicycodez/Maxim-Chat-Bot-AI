@@ -1,4 +1,5 @@
 import random
+import re
 import asyncio
 import time
 from datetime import datetime, timezone, timedelta
@@ -27,6 +28,16 @@ class MessageHandler:
         self.memory = memory_manager
         self.detector = LanguageDetector()
         self._cooldowns: dict[int, float] = {}  # group_id -> last reply timestamp
+        self._my_user_id: int = 0
+        self._my_username: str = ""
+        self._my_first_name: str = ""
+
+    def _ensure_me(self) -> None:
+        """Cache self info on first use."""
+        if not self._my_user_id and self.client.me:
+            self._my_user_id = self.client.me.id
+            self._my_username = (self.client.me.username or "").lower()
+            self._my_first_name = (self.client.me.first_name or "").lower()
 
     # ── Filter checks ───────────────────────────────────
 
@@ -82,38 +93,66 @@ class MessageHandler:
 
         return True
 
+    def _is_mentioned(self, message: Message) -> bool:
+        """Check if the assistant is mentioned via @mention, text mention, or reply."""
+        self._ensure_me()
+
+        # 1. Check Telegram entities (actual @mentions and text_mentions)
+        if message.entities:
+            for ent in message.entities:
+                # @username mention
+                if ent.type == "mention":
+                    mentioned_text = message.text[ent.offset:ent.offset + ent.length].lower()
+                    mentioned_text = mentioned_text.lstrip("@")
+                    if mentioned_text == self._my_username:
+                        logger.debug(f"Mentioned via @username: {mentioned_text}")
+                        return True
+
+                # Text mention (when user is mentioned without @, e.g. in name)
+                if ent.type == "text_mention":
+                    if ent.user and ent.user.id == self._my_user_id:
+                        logger.debug("Mentioned via text_mention entity")
+                        return True
+
+        # 2. Check if replying to our message
+        if message.reply_to_message and message.reply_to_message.from_user:
+            if message.reply_to_message.from_user.id == self._my_user_id:
+                logger.debug("Mentioned via reply")
+                return True
+
+        # 3. Text-based fallback: check if username/first_name appears in text
+        text = (message.text or "").lower()
+        if self._my_username and self._my_username in text:
+            logger.debug(f"Mentioned via text: @{self._my_username}")
+            return True
+        if self._my_first_name and self._my_first_name in text:
+            logger.debug(f"Mentioned via text: {self._my_first_name}")
+            return True
+
+        return False
+
     def _should_reply(self, message: Message) -> bool:
         """Determine if the message warrants a reply."""
-        text = message.text or ""
+        # In private chats, always reply
+        if message.chat.type == "private":
+            return True
 
-        # Always reply if directly addressed
-        me = self.client.me
-        if me:
-            mentions = [me.username, me.first_name, "persona"] if me.first_name else ["persona"]
-            mentions = [m.lower() for m in mentions if m]
-            lower_text = text.lower()
-            if any(m in lower_text for m in mentions):
-                return True
+        # In groups: always reply if mentioned (@tag, reply, name)
+        if self._is_mentioned(message):
+            return True
 
-        # Reply if it's a reply to our message
-        if message.reply_to_message and message.reply_to_message.from_user:
-            if message.reply_to_message.from_user.id == (self.client.me.id if self.client.me else 0):
-                return True
-
-        # For group chats, use probabilistic response for non-directed messages
+        # For group chats, probabilistic response for non-directed messages
         if message.chat.type in ("group", "supergroup"):
-            # ~15% chance to reply to non-directed messages in groups
             return random.random() < 0.15
 
-        # In private chats, always reply
-        return True
+        return False
 
     async def _check_cooldown(self, chat_id: int) -> bool:
         """Return True if we're still in cooldown for this group."""
         now = time.time()
         last = self._cooldowns.get(chat_id, 0)
         if now - last < cfg.REPLY_COOLDOWN:
-            return True  # still in cooldown
+            return True
         return False
 
     async def _set_cooldown(self, chat_id: int) -> None:
@@ -124,6 +163,8 @@ class MessageHandler:
     async def handle(self, message: Message) -> None:
         """Main entry point for processing a message."""
         try:
+            self._ensure_me()
+
             if not await self.should_process(message):
                 return
 
@@ -132,8 +173,9 @@ class MessageHandler:
 
             chat_id = message.chat.id
 
-            # Cooldown check (groups only)
-            if message.chat.type in ("group", "supergroup"):
+            # Cooldown check (groups only) — skip if mentioned
+            is_mentioned = self._is_mentioned(message)
+            if message.chat.type in ("group", "supergroup") and not is_mentioned:
                 if await self._check_cooldown(chat_id):
                     return
 
@@ -187,13 +229,13 @@ class MessageHandler:
             delay = random.uniform(cfg.TYPING_DELAY_MIN, cfg.TYPING_DELAY_MAX)
             await asyncio.sleep(delay)
 
-            # Send with typing action
+            # Send reply
             await message.reply_text(reply_text)
 
             # Save assistant's reply to DB
             await db_ops.save_message(
                 chat_id=chat_id,
-                user_id=self.client.me.id if self.client.me else 0,
+                user_id=self._my_user_id,
                 text=reply_text,
                 is_bot=True,
             )

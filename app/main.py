@@ -137,8 +137,8 @@ async def main():
     else:
         logger.warning("No BOT_TOKEN set — owner dashboard disabled")
 
-    # 8. Initialize scheduler
-    scheduler = AppScheduler(memory_mgr)
+    # 8. Initialize scheduler (pass user_client for auto-messages)
+    scheduler = AppScheduler(memory_mgr, user_client=user_client)
     scheduler.start()
 
     # 9. Ready
