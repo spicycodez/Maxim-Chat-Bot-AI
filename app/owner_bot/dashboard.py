@@ -514,9 +514,18 @@ class OwnerDashboard:
         ]
 
         for cmd_name, handler in commands:
-            # Wrap each handler with _owner_only
             wrapped = _owner_only(handler)
             bot_client.on_message(filters.command(cmd_name) & filters.user(cfg.OWNER_ID))(wrapped)
+
+        # Catch-all /start for non-owners
+        @bot_client.on_message(filters.command("start") & ~filters.user(cfg.OWNER_ID))
+        async def start_catchall(client, message):
+            await message.reply_text("\u26d4 This bot is for authorized use only.")
+
+        # Catch-all for any other command from non-owners
+        @bot_client.on_message(filters.command() & ~filters.user(cfg.OWNER_ID))
+        async def cmd_catchall(client, message):
+            await message.reply_text("\u26d4 Owner only.")
 
         # Callback queries (inline buttons)
         bot_client.on_callback_query(self.on_callback)
