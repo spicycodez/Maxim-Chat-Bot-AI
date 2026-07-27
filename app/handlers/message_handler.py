@@ -18,8 +18,7 @@ class MessageHandler:
     """Processes incoming Telegram messages, decides whether to reply, and generates responses.
 
     - In PRIVATE chat: ALWAYS replies to every message (no mention needed)
-    - In GROUP chat: replies to everything EXCEPT when someone else is tagged
-      (i.e. if @otheruser is in the message, don't reply — that's for someone else)
+    - In GROUP chat: replies on @mention, reply-to, or 15% random
     - Per-user memory isolation: each user's context is separate
     """
 
@@ -116,53 +115,23 @@ class MessageHandler:
 
         return False
 
-    def _is_tagging_someone_else(self, message: Message) -> bool:
-        """Check if the message is tagging/tagging another user who is NOT the assistant.
-
-        If the message contains @otheruser (not us), or text_mention for someone else,
-        or is replying to someone else's message — it's directed at someone else.
-        """
-        self._ensure_me()
-
-        # Check Telegram entities for @mentions and text_mentions
-        if message.entities:
-            for ent in message.entities:
-                if ent.type == "mention":
-                    mentioned_text = message.text[ent.offset:ent.offset + ent.length].lower().lstrip("@")
-                    # If this mention is NOT us, they're talking to someone else
-                    if mentioned_text != self._my_username:
-                        return True
-
-                if ent.type == "text_mention":
-                    if ent.user and ent.user.id != self._my_user_id:
-                        return True
-
-        # If replying to someone else's message
-        if message.reply_to_message and message.reply_to_message.from_user:
-            if message.reply_to_message.from_user.id != self._my_user_id:
-                return True
-
-        return False
-
     def _should_reply(self, message: Message) -> bool:
         """Determine if the message warrants a reply.
 
         PRIVATE CHAT: Always reply — no mention/tag needed.
-        GROUP CHAT: Reply to everything EXCEPT when someone else is tagged.
+        GROUP CHAT: Reply on mention/tag/reply-to-bot, or 15% random.
         """
         # Private chat: ALWAYS reply
         if message.chat.type == "private":
             return True
 
-        # Group chat logic
-        if message.chat.type in ("group", "supergroup"):
-            # If message tags someone else → don't reply (not for us)
-            if self._is_tagging_someone_else(message):
-                return False
-
-            # If message tags us → reply (also handled here for clarity)
-            # Everything else (no tag, general chat) → reply
+        # Group: always reply if mentioned
+        if self._is_mentioned(message):
             return True
+
+        # Group: 15% random for non-directed messages
+        if message.chat.type in ("group", "supergroup"):
+            return random.random() < 0.15
 
         return False
 
