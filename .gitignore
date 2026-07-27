@@ -17,3 +17,4 @@ venv/
 # Temp
 test_*.py
 start_bot.sh
+run_bot.sh
