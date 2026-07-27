@@ -3,7 +3,13 @@
   "description": "Persona AI Telegram Userbot with Group Chat & Owner Dashboard",
   "repository": "https://github.com/spicycodez/Maxim-Chat-Bot-AI",
   "logo": "https://img.icons8.com/fluency/240/artificial-intelligence.png",
-  "keywords": ["telegram", "ai", "chatbot", "userbot", "pyrogram"],
+  "keywords": [
+    "telegram",
+    "ai",
+    "chatbot",
+    "userbot",
+    "pyrogram"
+  ],
   "env": {
     "API_ID": {
       "description": "Telegram API ID (from my.telegram.org)",
@@ -44,7 +50,7 @@
       "required": true
     },
     "AI_MODEL": {
-      "description": "AI model name (leave empty for provider default)",
+      "description": "AI model name",
       "required": false,
       "value": "nvidia/nemotron-3-super-120b-a12b:free"
     },
@@ -54,7 +60,7 @@
       "value": "openrouter,groq"
     },
     "AUTO_MESSAGE_ENABLED": {
-      "description": "Enable proactive group messages every 30 min",
+      "description": "Enable proactive group messages",
       "required": false,
       "value": "true"
     },
@@ -64,15 +70,9 @@
       "value": "30"
     },
     "LOG_LEVEL": {
-      "description": "Logging level: DEBUG, INFO, WARNING, ERROR",
+      "description": "Logging level",
       "required": false,
       "value": "INFO"
-    }
-  },
-  "formation": {
-    "worker": {
-      "quantity": 1,
-      "size": "eco"
     }
   },
   "buildpacks": [
