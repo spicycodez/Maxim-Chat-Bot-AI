@@ -1,0 +1,83 @@
+{
+  "name": "persona-ai-assistant",
+  "description": "Persona AI Telegram Userbot with Group Chat & Owner Dashboard",
+  "repository": "https://github.com/spicycodez/Maxim-Chat-Bot-AI",
+  "logo": "https://img.icons8.com/fluency/240/artificial-intelligence.png",
+  "keywords": ["telegram", "ai", "chatbot", "userbot", "pyrogram"],
+  "env": {
+    "API_ID": {
+      "description": "Telegram API ID (from my.telegram.org)",
+      "required": true
+    },
+    "API_HASH": {
+      "description": "Telegram API Hash (from my.telegram.org)",
+      "required": true
+    },
+    "SESSION_STRING": {
+      "description": "Pyrogram session string for user account",
+      "required": true
+    },
+    "BOT_TOKEN": {
+      "description": "Telegram Bot Token for owner dashboard",
+      "required": true
+    },
+    "OWNER_ID": {
+      "description": "Telegram User ID of the bot owner",
+      "required": true
+    },
+    "MONGO_URL": {
+      "description": "MongoDB Atlas connection string",
+      "required": true
+    },
+    "DB_NAME": {
+      "description": "MongoDB database name",
+      "required": false,
+      "value": "persona_ai"
+    },
+    "AI_PROVIDER": {
+      "description": "AI provider: openrouter, groq, or gemini",
+      "required": false,
+      "value": "openrouter"
+    },
+    "AI_API_KEY": {
+      "description": "API key for the AI provider",
+      "required": true
+    },
+    "AI_MODEL": {
+      "description": "AI model name (leave empty for provider default)",
+      "required": false,
+      "value": "nvidia/nemotron-3-super-120b-a12b:free"
+    },
+    "FALLBACK_ORDER": {
+      "description": "Comma-separated fallback provider order",
+      "required": false,
+      "value": "openrouter,groq"
+    },
+    "AUTO_MESSAGE_ENABLED": {
+      "description": "Enable proactive group messages every 30 min",
+      "required": false,
+      "value": "true"
+    },
+    "AUTO_MESSAGE_INTERVAL": {
+      "description": "Auto-message interval in minutes",
+      "required": false,
+      "value": "30"
+    },
+    "LOG_LEVEL": {
+      "description": "Logging level: DEBUG, INFO, WARNING, ERROR",
+      "required": false,
+      "value": "INFO"
+    }
+  },
+  "formation": {
+    "worker": {
+      "quantity": 1,
+      "size": "eco"
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ]
+}
