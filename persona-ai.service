@@ -1,0 +1,15 @@
+[Unit]
+Description=Persona AI Telegram Assistant
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/Maxim-Chat-Bot-AI
+ExecStart=/usr/bin/python3 -m app.main
+Restart=always
+RestartSec=5
+Environment=PYTHONPATH=/root/Maxim-Chat-Bot-AI
+
+[Install]
+WantedBy=multi-user.target
