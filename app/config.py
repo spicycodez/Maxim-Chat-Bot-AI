@@ -53,6 +53,12 @@ AUTO_SUMMARY_INTERVAL: int = int(os.getenv("AUTO_SUMMARY_INTERVAL", "30"))  # mi
 AUTO_MESSAGE_ENABLED: bool = os.getenv("AUTO_MESSAGE_ENABLED", "true").lower() in ("true", "1", "yes")
 AUTO_MESSAGE_INTERVAL: int = int(os.getenv("AUTO_MESSAGE_INTERVAL", "30"))  # minutes
 
+# ── Bot Start Page ─────────────────────────────────────
+START_IMAGE_URL: str = os.getenv("START_IMAGE_URL", "")  # optional image for /start
+START_MESSAGE: str = os.getenv("START_MESSAGE", "")  # optional custom text (uses default if empty)
+SUPPORT_GROUP: str = os.getenv("SUPPORT_GROUP", "")  # e.g. https://t.me/your_group
+SUPPORT_CHANNEL: str = os.getenv("SUPPORT_CHANNEL", "")  # e.g. https://t.me/your_channel
+
 # ── Misc ──────────────────────────────────────────────────
 LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
 BLACKLISTED_USERS: list[int] = [

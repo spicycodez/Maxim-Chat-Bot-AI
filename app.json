@@ -57,7 +57,7 @@
     "FALLBACK_ORDER": {
       "description": "Comma-separated fallback provider order",
       "required": false,
-      "value": "openrouter,groq"
+      "value": "openrouter"
     },
     "AUTO_MESSAGE_ENABLED": {
       "description": "Enable proactive group messages",
@@ -68,6 +68,26 @@
       "description": "Auto-message interval in minutes",
       "required": false,
       "value": "30"
+    },
+    "START_IMAGE_URL": {
+      "description": "Optional image URL for /start (leave empty to skip)",
+      "required": false,
+      "value": ""
+    },
+    "START_MESSAGE": {
+      "description": "Optional custom /start text (uses default if empty)",
+      "required": false,
+      "value": ""
+    },
+    "SUPPORT_GROUP": {
+      "description": "Support group link e.g. https://t.me/your_group",
+      "required": false,
+      "value": ""
+    },
+    "SUPPORT_CHANNEL": {
+      "description": "Support channel link e.g. https://t.me/your_channel",
+      "required": false,
+      "value": ""
     },
     "LOG_LEVEL": {
       "description": "Logging level",

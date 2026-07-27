@@ -484,7 +484,6 @@ class OwnerDashboard:
     def register_handlers(self, bot_client: Client):
         """Register all owner bot command handlers."""
         commands = [
-            ("start", self.cmd_start),
             ("help", self.cmd_help),
             ("ping", self.cmd_ping),
             ("stats", self.cmd_stats),
@@ -517,10 +516,36 @@ class OwnerDashboard:
             wrapped = _owner_only(handler)
             bot_client.on_message(filters.command(cmd_name) & filters.user(cfg.OWNER_ID))(wrapped)
 
-        # Catch-all /start for non-owners
-        @bot_client.on_message(filters.command("start") & ~filters.user(cfg.OWNER_ID))
-        async def start_catchall(client, message):
-            await message.reply_text("\u26d4 This bot is for authorized use only.")
+        # Public /start for everyone — owner gets dashboard, others get welcome
+        @bot_client.on_message(filters.command("start"))
+        async def public_start(client, message):
+            if message.from_user and message.from_user.id == cfg.OWNER_ID:
+                return await self.cmd_start(client, message)
+
+            # Public welcome with optional image + support buttons
+            start_text = cfg.START_MESSAGE or (
+                f"Hey {message.from_user.first_name or 'there'}! \n\n"
+                f"I'm an AI-powered assistant that chats in groups. \n"
+                f"Add me to your group and tag me to get started!"
+            )
+            buttons = []
+            if cfg.SUPPORT_GROUP:
+                buttons.append([InlineKeyboardButton("Support Group", url=cfg.SUPPORT_GROUP)])
+            if cfg.SUPPORT_CHANNEL:
+                buttons.append([InlineKeyboardButton("Support Channel", url=cfg.SUPPORT_CHANNEL)])
+
+            if cfg.START_IMAGE_URL and buttons:
+                await message.reply_photo(
+                    photo=cfg.START_IMAGE_URL,
+                    caption=start_text,
+                    reply_markup=InlineKeyboardMarkup(buttons),
+                )
+            elif cfg.START_IMAGE_URL:
+                await message.reply_photo(photo=cfg.START_IMAGE_URL, caption=start_text)
+            elif buttons:
+                await message.reply_text(start_text, reply_markup=InlineKeyboardMarkup(buttons))
+            else:
+                await message.reply_text(start_text)
 
         # Catch-all for any other command from non-owners
         @bot_client.on_message(filters.command() & ~filters.user(cfg.OWNER_ID))
