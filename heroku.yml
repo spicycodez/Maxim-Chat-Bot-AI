@@ -2,4 +2,4 @@ build:
   docker:
     web: Dockerfile
 run:
-  web: cd app && python main.py
+  worker: cd app && python -m main
