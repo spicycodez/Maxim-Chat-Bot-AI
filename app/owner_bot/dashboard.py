@@ -573,8 +573,10 @@ class OwnerDashboard:
                 await message.reply_text(start_text)
 
         # Catch-all for any other command from non-owners
-        @bot_client.on_message(filters.command() & ~filters.user(cfg.OWNER_ID))
+        @bot_client.on_message(~filters.user(cfg.OWNER_ID) & filters.regex(r"^/"))
         async def cmd_catchall(client, message):
+            if message.text and message.text.startswith("/start"):
+                return  # handled above
             await message.reply_text("\u26d4 Owner only.")
 
         # Callback queries (inline buttons)

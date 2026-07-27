@@ -33,8 +33,8 @@ SUMMARY_TRIGGER_MINUTES: int = int(os.getenv("SUMMARY_TRIGGER_MINUTES", "60"))
 
 # ── Reply Settings ───────────────────────────────────────
 REPLY_COOLDOWN: int = int(os.getenv("REPLY_COOLDOWN", "10"))  # seconds per group
-TYPING_DELAY_MIN: float = float(os.getenv("TYPING_DELAY_MIN", "2.0"))
-TYPING_DELAY_MAX: float = float(os.getenv("TYPING_DELAY_MAX", "5.0"))
+TYPING_DELAY_MIN: float = float(os.getenv("TYPING_DELAY_MIN", "0.3"))
+TYPING_DELAY_MAX: float = float(os.getenv("TYPING_DELAY_MAX", "1.5"))
 MAX_REPLY_LENGTH: int = int(os.getenv("MAX_REPLY_LENGTH", "4096"))
 
 # ── Scheduler ─────────────────────────────────────────────
