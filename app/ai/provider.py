@@ -1,9 +1,6 @@
 from typing import Protocol, runtime_checkable
-import httpx
-import google.generativeai as genai
 from loguru import logger
 import app.config as cfg
-from app.ai.gemini_provider import GeminiProvider
 from app.ai.groq_provider import GroqProvider
 from app.ai.openrouter_provider import OpenRouterProvider
 
@@ -25,6 +22,7 @@ def get_ai_provider(provider_name: str | None = None) -> AIProvider:
     name = (provider_name or cfg.AI_PROVIDER).lower()
 
     if name == "gemini":
+        from app.ai.gemini_provider import GeminiProvider
         return GeminiProvider(api_key=cfg.AI_API_KEY, model=cfg.AI_MODEL or "gemini-2.0-flash")
     elif name == "groq":
         return GroqProvider(api_key=cfg.AI_API_KEY, model=cfg.AI_MODEL or "llama-3.3-70b-versatile")
