@@ -4,7 +4,7 @@ import asyncio
 import time
 from datetime import datetime, timezone, timedelta
 from loguru import logger
-from pyrogram import Client, filters
+from pyrogram import Client, filters, enums
 from pyrogram.types import Message
 
 from app.database import operations as db_ops
@@ -12,6 +12,16 @@ from app.language.detector import LanguageDetector
 from app.ai.response_engine import ResponseEngine
 from app.memory.manager import MemoryManager
 import app.config as cfg
+
+
+def _get_chat_type(message: Message) -> str:
+    """Reliably get chat type as string from Pyrogram ChatType enum."""
+    ct = message.chat.type
+    # Pyrogram ChatType enum — use .value for the string ("private", "group", etc.)
+    if hasattr(ct, "value"):
+        return ct.value
+    # Fallback: try str conversion
+    return str(ct)
 
 
 class MessageHandler:
@@ -50,7 +60,7 @@ class MessageHandler:
             self._my_username = (self.client.me.username or "").lower()
             self._my_first_name = (self.client.me.first_name or "").lower()
             self._me_loaded = True
-            logger.info(f"Bot identity cached from client.me: id={self._my_user_id} @{self._my_username}")
+            logger.info(f"Bot identity cached: id={self._my_user_id} @{self._my_username}")
             return
 
         # Fallback: call GetMe API (works even right after start)
@@ -107,8 +117,9 @@ class MessageHandler:
             logger.debug(f"SKIP [{message.chat.id}]: user {user_id} in hardcoded blacklist")
             return False
 
+        chat_type = _get_chat_type(message)
         chat_id = message.chat.id
-        if str(message.chat.type) in ("group", "supergroup"):
+        if chat_type in ("group", "supergroup"):
             group_ok = await db_ops.is_group_enabled(chat_id)
             if not group_ok:
                 logger.debug(f"SKIP [{chat_id}]: group not enabled in DB")
@@ -190,20 +201,23 @@ class MessageHandler:
         PRIVATE CHAT: Always reply — no mention/tag needed.
         GROUP CHAT: Reply to everything EXCEPT when someone else is tagged.
         """
+        chat_type = _get_chat_type(message)
+
         # Private chat: ALWAYS reply
-        if str(message.chat.type) == "private":
-            logger.debug(f"DM: will reply (always)")
+        if chat_type == "private":
+            logger.info(f"DM: will reply (always)")
             return True
 
         # Group chat logic
-        if str(message.chat.type) in ("group", "supergroup"):
+        if chat_type in ("group", "supergroup"):
             # If message tags someone else -> don't reply (not for us)
             if await self._is_tagging_someone_else(message):
                 return False
 
-            logger.debug(f"Group: will reply")
+            logger.info(f"Group: will reply")
             return True
 
+        logger.warning(f"Unknown chat type '{chat_type}' — not replying")
         return False
 
     async def _check_cooldown(self, chat_id: int) -> bool:
@@ -224,14 +238,12 @@ class MessageHandler:
         try:
             await self._ensure_me()
 
-            # Log every incoming message at DEBUG level
-            # Pyrogram returns ChatType enum — convert to string for comparisons
-            chat_type = str(message.chat.type)
+            chat_type = _get_chat_type(message)
             user = message.from_user.first_name if message.from_user else "Unknown"
             chat_id = message.chat.id
             user_id = message.from_user.id if message.from_user else 0
             text_preview = (message.text or "")[:60]
-            logger.debug(f"INCOMING [{chat_type}] {user}(id={user_id}) in {chat_id}: \"{text_preview}\"")
+            logger.info(f"INCOMING [{chat_type}] {user}(id={user_id}) in {chat_id}: \"{text_preview}\"")
 
             if not await self.should_process(message):
                 return
@@ -243,7 +255,7 @@ class MessageHandler:
             is_mentioned = await self._is_mentioned(message)
             if chat_type in ("group", "supergroup") and not is_mentioned:
                 if await self._check_cooldown(chat_id):
-                    logger.debug(f"COOLDOWN: skipping reply in {chat_id}")
+                    logger.info(f"COOLDOWN: skipping reply in {chat_id}")
                     return
 
             user_name = (
@@ -291,7 +303,7 @@ class MessageHandler:
                 asyncio.create_task(self.memory.generate_summary(chat_id, user_id))
 
             # Generate reply using per-user context (pass reply-to text for context)
-            logger.debug(f"Generating reply for {user_name} in {chat_id}...")
+            logger.info(f"Generating reply for {user_name} in {chat_id}...")
             reply_text = await self.engine.generate_reply(chat_id, user_id, text, user_name, reply_to_text=reply_to_text)
 
             if not reply_text:
