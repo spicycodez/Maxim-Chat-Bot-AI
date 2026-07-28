@@ -27,18 +27,24 @@ def get_ai_provider(provider_name: str | None = None, model: str = "") -> AIProv
 def get_fallback_chain() -> list[AIProvider]:
     """Return provider chain with multiple fallback free models.
 
+    Updated July 2026: old models (gemini-2.0-flash-exp, llama-3.1-8b, mistral-7b,
+    qwen-2-7b, zephyr-7b) have all been delisted from OpenRouter.
+    New fallbacks use models confirmed live as of July 27, 2026.
+
     If the user set AI_MODEL in .env, that model is tried first.
-    If it fails (e.g. DEGRADED), we try the remaining free models in order.
+    If it fails (e.g. DEGRADED/404), we try the remaining free models in order.
     """
     user_model = cfg.AI_MODEL or "nvidia/nemotron-3-super-120b-a12b:free"
 
-    # Ordered list of free fallback models (reliable ones first)
+    # Live free models as of July 27, 2026 (verified on openrouter.ai/collections/free-models)
+    # Ordered: best general chat quality first, then code-specialized, then smaller
     fallback_models = [
-        "google/gemini-2.0-flash-exp:free",
-        "meta-llama/llama-3.1-8b-instruct:free",
-        "mistralai/mistral-7b-instruct:free",
-        "qwen/qwen-2-7b-instruct:free",
-        "huggingfaceh4/zephyr-7b-beta:free",
+        "google/gemma-4-31b-it:free",           # 31B, strong general chat
+        "inclusionai/ling-3.0-flash:free",      # fast, good general
+        "nvidia/nemotron-3-nano-30b-a3b:free",  # 30B, good quality
+        "google/gemma-4-26b-a4b-it:free",        # 26B MoE, efficient
+        "nvidia/nemotron-nano-9b-v2:free",       # 9B, fast fallback
+        "openai/gpt-oss-20b:free",               # OpenAI's open model
     ]
 
     # Build chain: user's model first, then fallbacks (skip duplicate)
