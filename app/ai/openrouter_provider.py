@@ -15,11 +15,11 @@ _rate_limit_logged: bool = False  # avoid spamming the same warning
 
 def is_rate_limited() -> bool:
     """Check if we're currently rate-limited account-wide."""
+    global _rate_limit_reset, _rate_limit_logged
     if _rate_limit_reset > time.time():
         return True
     if _rate_limit_reset > 0:
         # Reset time passed, clear it
-        global _rate_limit_reset, _rate_limit_logged
         _rate_limit_reset = 0.0
         _rate_limit_logged = False
         logger.info("OpenRouter rate limit period expired, resuming requests")
