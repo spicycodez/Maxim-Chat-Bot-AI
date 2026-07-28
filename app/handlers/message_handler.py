@@ -37,13 +37,33 @@ class MessageHandler:
         self._my_user_id: int = 0
         self._my_username: str = ""
         self._my_first_name: str = ""
+        self._me_loaded: bool = False  # track if we've successfully loaded
 
-    def _ensure_me(self) -> None:
-        """Cache self info on first use."""
-        if not self._my_user_id and self.client.me:
+    async def _ensure_me(self) -> None:
+        """Cache self info. Uses client.me if available, otherwise calls get_me() API."""
+        if self._me_loaded:
+            return
+
+        # Try cached client.me first
+        if self.client.me:
             self._my_user_id = self.client.me.id
             self._my_username = (self.client.me.username or "").lower()
             self._my_first_name = (self.client.me.first_name or "").lower()
+            self._me_loaded = True
+            logger.info(f"Bot identity cached from client.me: id={self._my_user_id} @{self._my_username}")
+            return
+
+        # Fallback: call GetMe API (works even right after start)
+        try:
+            me = await self.client.get_me()
+            if me:
+                self._my_user_id = me.id
+                self._my_username = (me.username or "").lower()
+                self._my_first_name = (me.first_name or "").lower()
+                self._me_loaded = True
+                logger.info(f"Bot identity fetched via get_me(): id={self._my_user_id} @{self._my_username}")
+        except Exception as e:
+            logger.error(f"Failed to fetch bot identity: {e}")
 
     # -- Filter checks ------------------------------------------
 
@@ -88,9 +108,9 @@ class MessageHandler:
 
         return True
 
-    def _is_mentioned(self, message: Message) -> bool:
+    async def _is_mentioned(self, message: Message) -> bool:
         """Check if the assistant is mentioned via @mention, text mention, or reply."""
-        self._ensure_me()
+        await self._ensure_me()
 
         if message.entities:
             for ent in message.entities:
@@ -116,13 +136,13 @@ class MessageHandler:
 
         return False
 
-    def _is_tagging_someone_else(self, message: Message) -> bool:
+    async def _is_tagging_someone_else(self, message: Message) -> bool:
         """Check if the message is tagging another user who is NOT the assistant.
 
         If the message contains @otheruser (not us), or text_mention for someone else,
         or is replying to someone else's message — it's directed at someone else.
         """
-        self._ensure_me()
+        await self._ensure_me()
 
         # Check Telegram entities for @mentions and text_mentions
         if message.entities:
@@ -144,7 +164,7 @@ class MessageHandler:
 
         return False
 
-    def _should_reply(self, message: Message) -> bool:
+    async def _should_reply(self, message: Message) -> bool:
         """Determine if the message warrants a reply.
 
         PRIVATE CHAT: Always reply — no mention/tag needed.
@@ -157,7 +177,7 @@ class MessageHandler:
         # Group chat logic
         if message.chat.type in ("group", "supergroup"):
             # If message tags someone else -> don't reply (not for us)
-            if self._is_tagging_someone_else(message):
+            if await self._is_tagging_someone_else(message):
                 return False
 
             # If message tags us -> reply (also handled here for clarity)
@@ -182,19 +202,19 @@ class MessageHandler:
     async def handle(self, message: Message) -> None:
         """Main entry point for processing a message."""
         try:
-            self._ensure_me()
+            await self._ensure_me()
 
             if not await self.should_process(message):
                 return
 
-            if not self._should_reply(message):
+            if not await self._should_reply(message):
                 return
 
             chat_id = message.chat.id
             user_id = message.from_user.id if message.from_user else 0
 
             # Cooldown check (groups only) — skip if mentioned
-            is_mentioned = self._is_mentioned(message)
+            is_mentioned = await self._is_mentioned(message)
             if message.chat.type in ("group", "supergroup") and not is_mentioned:
                 if await self._check_cooldown(chat_id):
                     return

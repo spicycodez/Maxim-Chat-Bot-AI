@@ -101,6 +101,13 @@ async def main():
     await user_client.start()
     logger.info("User session connected")
 
+    # Pre-warm bot identity so message handler knows who it is immediately
+    try:
+        me = await user_client.get_me()
+        logger.info(f"Bot identity: id={me.id} @{me.username or 'N/A'} ({me.first_name})")
+    except Exception as e:
+        logger.error(f"Failed to pre-warm bot identity: {e}")
+
     # 6. Initialize message handler
     msg_handler = MessageHandler(
         client=user_client,
