@@ -126,15 +126,8 @@ class AppScheduler:
             replace_existing=True,
         )
 
-        # Weekly cleanup of per-user data (messages, summaries, memories older than 7 days)
-        self.scheduler.add_job(
-            self._weekly_user_data_cleanup,
-            trigger=IntervalTrigger(weeks=1),
-            id="weekly_cleanup",
-            name="Weekly User Data Cleanup",
-            replace_existing=True,
-        )
-        logger.info("Weekly user data cleanup scheduled (every 7 days)")
+        # NOTE: User data (messages, summaries, memories) is NOT auto-deleted.
+        # Once stored, it persists permanently.
 
         self.scheduler.start()
         logger.info("Scheduler started")
@@ -198,17 +191,3 @@ class AppScheduler:
             logger.info(f"Cleaned up {result.deleted_count} old log entries")
         except Exception as e:
             logger.error(f"Log cleanup failed: {e}")
-
-    async def _weekly_user_data_cleanup(self) -> None:
-        """Delete per-user messages, summaries, and memories older than 7 days."""
-        try:
-            results = await db_ops.cleanup_old_user_data(days=7)
-            total = results.get("messages", 0) + results.get("summaries", 0) + results.get("memories", 0)
-            logger.info(f"Weekly cleanup: removed {results.get('messages', 0)} msgs, {results.get('summaries', 0)} summaries, {results.get('memories', 0)} memories")
-            await db_ops.save_log(
-                "INFO", "Weekly Cleanup",
-                f"Removed {total} total records older than 7 days"
-            )
-        except Exception as e:
-            logger.error(f"Weekly cleanup failed: {e}")
-            await db_ops.save_log("ERROR", "Scheduler", f"Weekly cleanup failed: {e}")

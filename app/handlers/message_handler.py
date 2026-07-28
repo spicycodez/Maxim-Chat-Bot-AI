@@ -206,6 +206,11 @@ class MessageHandler:
             )
             text = message.text.strip()
 
+            # Extract reply-to context (for DM and group)
+            reply_to_text = None
+            if message.reply_to_message and message.reply_to_message.text:
+                reply_to_text = message.reply_to_message.text.strip()
+
             # Detect language
             lang = self.detector.detect(text)
             logger.debug(f"Detected language: {lang} for: {text[:50]}")
@@ -238,8 +243,8 @@ class MessageHandler:
             if await self.memory.should_summarize(chat_id, user_id):
                 asyncio.create_task(self.memory.generate_summary(chat_id, user_id))
 
-            # Generate reply using per-user context
-            reply_text = await self.engine.generate_reply(chat_id, user_id, text, user_name)
+            # Generate reply using per-user context (pass reply-to text for context)
+            reply_text = await self.engine.generate_reply(chat_id, user_id, text, user_name, reply_to_text=reply_to_text)
 
             if not reply_text:
                 return

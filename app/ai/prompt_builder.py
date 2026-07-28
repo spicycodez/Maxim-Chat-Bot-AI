@@ -19,8 +19,13 @@ class PromptBuilder:
     def __init__(self, personality: str = ""):
         self._personality = personality
 
-    async def build(self, chat_id: int, user_id: int, current_message: str, user_name: str = "User") -> tuple[str, str]:
-        """Return (system_prompt, user_prompt) using only THIS user's memory."""
+    async def build(self, chat_id: int, user_id: int, current_message: str, user_name: str = "User", reply_to_text: str | None = None) -> tuple[str, str]:
+        """Return (system_prompt, user_prompt) using only THIS user's memory.
+
+        Args:
+            reply_to_text: If the user is replying to a specific message, this is
+                           the text of that message (for context).
+        """
         # 1. Personality as system prompt
         system_prompt = self._personality or "You are a helpful Telegram assistant. Be concise and natural."
 
@@ -48,7 +53,13 @@ class PromptBuilder:
                 conv_lines.append(f"{role}: {msg['text']}")
             parts.append("[Recent Conversation with this user]\n" + "\n".join(conv_lines))
 
-        parts.append(f"{user_name}: {current_message}")
+        # Build the current user message — include reply context if present
+        if reply_to_text:
+            current_line = f"{user_name} (replying to \"{reply_to_text[:200]}\") : {current_message}"
+        else:
+            current_line = f"{user_name}: {current_message}"
+
+        parts.append(current_line)
 
         user_prompt = "\n\n".join(parts)
         return system_prompt, user_prompt

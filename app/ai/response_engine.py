@@ -26,9 +26,9 @@ class ResponseEngine:
     def refresh_providers(self) -> None:
         self._provider_chain = get_fallback_chain()
 
-    async def generate_reply(self, chat_id: int, user_id: int, message_text: str, user_name: str = "User") -> str:
+    async def generate_reply(self, chat_id: int, user_id: int, message_text: str, user_name: str = "User", reply_to_text: str | None = None) -> str:
         """Generate a reply using per-user prompt + AI providers with concurrency control."""
-        system_prompt, user_prompt = await self.prompt_builder.build(chat_id, user_id, message_text, user_name)
+        system_prompt, user_prompt = await self.prompt_builder.build(chat_id, user_id, message_text, user_name, reply_to_text=reply_to_text)
 
         last_error = None
         async with _api_semaphore:  # throttle concurrent API hits
@@ -45,7 +45,12 @@ class ResponseEngine:
                     return reply[:cfg.MAX_REPLY_LENGTH]
                 except Exception as e:
                     last_error = e
-                    logger.warning(f"{provider.name} failed: {e}  -> trying next provider")
+                    # Check for DEGRADED model error — log at debug level, not warning
+                    error_str = str(e)
+                    if "DEGRADED" in error_str or "cannot be invoked" in error_str:
+                        logger.debug(f"{provider.name} model DEGRADED, trying next...")
+                    else:
+                        logger.warning(f"{provider.name} failed: {e}  -> trying next provider")
 
         # All providers failed
         await db_ops.update_stats(errors=1)
