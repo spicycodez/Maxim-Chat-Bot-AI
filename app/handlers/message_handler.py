@@ -108,7 +108,7 @@ class MessageHandler:
             return False
 
         chat_id = message.chat.id
-        if message.chat.type in ("group", "supergroup"):
+        if str(message.chat.type) in ("group", "supergroup"):
             group_ok = await db_ops.is_group_enabled(chat_id)
             if not group_ok:
                 logger.debug(f"SKIP [{chat_id}]: group not enabled in DB")
@@ -191,12 +191,12 @@ class MessageHandler:
         GROUP CHAT: Reply to everything EXCEPT when someone else is tagged.
         """
         # Private chat: ALWAYS reply
-        if message.chat.type == "private":
+        if str(message.chat.type) == "private":
             logger.debug(f"DM: will reply (always)")
             return True
 
         # Group chat logic
-        if message.chat.type in ("group", "supergroup"):
+        if str(message.chat.type) in ("group", "supergroup"):
             # If message tags someone else -> don't reply (not for us)
             if await self._is_tagging_someone_else(message):
                 return False
@@ -225,7 +225,8 @@ class MessageHandler:
             await self._ensure_me()
 
             # Log every incoming message at DEBUG level
-            chat_type = message.chat.type
+            # Pyrogram returns ChatType enum — convert to string for comparisons
+            chat_type = str(message.chat.type)
             user = message.from_user.first_name if message.from_user else "Unknown"
             chat_id = message.chat.id
             user_id = message.from_user.id if message.from_user else 0
