@@ -70,40 +70,52 @@ class MessageHandler:
     async def should_process(self, message: Message) -> bool:
         """Return True if the message passes all filter checks."""
         if not message.text or not message.text.strip():
+            logger.debug(f"SKIP [{message.chat.id}]: no text")
             return False
 
         if message.from_user and message.from_user.is_bot:
+            logger.debug(f"SKIP [{message.chat.id}]: from bot")
             return False
 
         if message.text.startswith("/"):
+            logger.debug(f"SKIP [{message.chat.id}]: command '{message.text[:20]}'")
             return False
 
         if message.forward_date:
+            logger.debug(f"SKIP [{message.chat.id}]: forwarded message")
             return False
 
         if message.sender_chat:
+            logger.debug(f"SKIP [{message.chat.id}]: sender_chat (channel/anon admin)")
             return False
 
         if message.empty:
+            logger.debug(f"SKIP [{message.chat.id}]: empty message")
             return False
 
         user_id = message.from_user.id if message.from_user else 0
 
         if await db_ops.is_blacklisted(user_id):
+            logger.debug(f"SKIP [{message.chat.id}]: user {user_id} blacklisted")
             return False
 
         if cfg.WHITELIST_ONLY and not await db_ops.is_whitelisted(user_id):
+            logger.debug(f"SKIP [{message.chat.id}]: user {user_id} not whitelisted")
             return False
 
         if user_id in cfg.BLACKLISTED_USERS:
+            logger.debug(f"SKIP [{message.chat.id}]: user {user_id} in hardcoded blacklist")
             return False
 
         chat_id = message.chat.id
         if message.chat.type in ("group", "supergroup"):
-            if not await db_ops.is_group_enabled(chat_id):
+            group_ok = await db_ops.is_group_enabled(chat_id)
+            if not group_ok:
+                logger.debug(f"SKIP [{chat_id}]: group not enabled in DB")
                 return False
 
         if len(message.text.strip()) < 2:
+            logger.debug(f"SKIP [{message.chat.id}]: text too short (<2 chars)")
             return False
 
         return True
@@ -139,10 +151,15 @@ class MessageHandler:
     async def _is_tagging_someone_else(self, message: Message) -> bool:
         """Check if the message is tagging another user who is NOT the assistant.
 
-        If the message contains @otheruser (not us), or text_mention for someone else,
-        or is replying to someone else's message — it's directed at someone else.
+        Only returns True if we are SURE the message is directed at someone else.
+        If bot identity is not loaded yet, returns False (be permissive).
         """
         await self._ensure_me()
+
+        # SAFETY: if identity not loaded, don't block anything
+        if not self._me_loaded or not self._my_user_id:
+            logger.debug("Bot identity not loaded yet, allowing group message (permissive)")
+            return False
 
         # Check Telegram entities for @mentions and text_mentions
         if message.entities:
@@ -151,15 +168,18 @@ class MessageHandler:
                     mentioned_text = message.text[ent.offset:ent.offset + ent.length].lower().lstrip("@")
                     # If this mention is NOT us, they're talking to someone else
                     if mentioned_text != self._my_username:
+                        logger.debug(f"Group SKIP: tagging @{mentioned_text} (not us)")
                         return True
 
                 if ent.type == "text_mention":
                     if ent.user and ent.user.id != self._my_user_id:
+                        logger.debug(f"Group SKIP: text_mention user {ent.user.id} (not us)")
                         return True
 
         # If replying to someone else's message
         if message.reply_to_message and message.reply_to_message.from_user:
             if message.reply_to_message.from_user.id != self._my_user_id:
+                logger.debug(f"Group SKIP: replying to user {message.reply_to_message.from_user.id} (not us)")
                 return True
 
         return False
@@ -172,6 +192,7 @@ class MessageHandler:
         """
         # Private chat: ALWAYS reply
         if message.chat.type == "private":
+            logger.debug(f"DM: will reply (always)")
             return True
 
         # Group chat logic
@@ -180,8 +201,7 @@ class MessageHandler:
             if await self._is_tagging_someone_else(message):
                 return False
 
-            # If message tags us -> reply (also handled here for clarity)
-            # Everything else (no tag, general chat) -> reply
+            logger.debug(f"Group: will reply")
             return True
 
         return False
@@ -204,19 +224,25 @@ class MessageHandler:
         try:
             await self._ensure_me()
 
+            # Log every incoming message at DEBUG level
+            chat_type = message.chat.type
+            user = message.from_user.first_name if message.from_user else "Unknown"
+            chat_id = message.chat.id
+            user_id = message.from_user.id if message.from_user else 0
+            text_preview = (message.text or "")[:60]
+            logger.debug(f"INCOMING [{chat_type}] {user}(id={user_id}) in {chat_id}: \"{text_preview}\"")
+
             if not await self.should_process(message):
                 return
 
             if not await self._should_reply(message):
                 return
 
-            chat_id = message.chat.id
-            user_id = message.from_user.id if message.from_user else 0
-
             # Cooldown check (groups only) — skip if mentioned
             is_mentioned = await self._is_mentioned(message)
-            if message.chat.type in ("group", "supergroup") and not is_mentioned:
+            if chat_type in ("group", "supergroup") and not is_mentioned:
                 if await self._check_cooldown(chat_id):
+                    logger.debug(f"COOLDOWN: skipping reply in {chat_id}")
                     return
 
             user_name = (
@@ -242,7 +268,7 @@ class MessageHandler:
                 first_name=message.from_user.first_name or "",
                 last_name=message.from_user.last_name or "",
             )
-            if message.chat.type in ("group", "supergroup"):
+            if chat_type in ("group", "supergroup"):
                 await db_ops.register_group(
                     group_id=chat_id,
                     title=message.chat.title or "",
@@ -264,9 +290,11 @@ class MessageHandler:
                 asyncio.create_task(self.memory.generate_summary(chat_id, user_id))
 
             # Generate reply using per-user context (pass reply-to text for context)
+            logger.debug(f"Generating reply for {user_name} in {chat_id}...")
             reply_text = await self.engine.generate_reply(chat_id, user_id, text, user_name, reply_to_text=reply_to_text)
 
             if not reply_text:
+                logger.warning(f"AI returned empty reply for {user_name} in {chat_id}")
                 return
 
             # Typing simulation
@@ -286,7 +314,7 @@ class MessageHandler:
 
             # Update stats
             await db_ops.increment_user_replies(user_id)
-            if message.chat.type in ("group", "supergroup"):
+            if chat_type in ("group", "supergroup"):
                 await db_ops.increment_group_replies(chat_id)
                 await self._set_cooldown(chat_id)
 
@@ -294,5 +322,7 @@ class MessageHandler:
 
         except Exception as e:
             logger.error(f"MessageHandler error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             await db_ops.update_stats(errors=1)
             await db_ops.save_log("ERROR", "MessageHandler", str(e)[:500])
