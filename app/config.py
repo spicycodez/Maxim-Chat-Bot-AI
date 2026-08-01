@@ -22,9 +22,14 @@ MONGO_URL: str = os.getenv("MONGO_URL", "")
 DB_NAME: str = os.getenv("DB_NAME", "persona_ai")
 
 # ── AI Provider ───────────────────────────────────────────
-AI_PROVIDER: str = os.getenv("AI_PROVIDER", "openrouter").lower()  # openrouter only
+AI_PROVIDER: str = os.getenv("AI_PROVIDER", "openrouter").lower()
 AI_API_KEY: str = os.getenv("AI_API_KEY", "")
 AI_MODEL: str = os.getenv("AI_MODEL", "")  # leave empty for provider default
+
+# ── TokenRouter (second AI provider, OpenAI-compatible) ──
+TOKENROUTER_API_KEY: str = os.getenv("TOKENROUTER_API_KEY", "")
+TOKENROUTER_MODEL: str = os.getenv("TOKENROUTER_MODEL", "")  # leave empty for defaults
+
 
 # ── Memory ────────────────────────────────────────────────
 SHORT_TERM_LIMIT: int = int(os.getenv("SHORT_TERM_LIMIT", "20"))

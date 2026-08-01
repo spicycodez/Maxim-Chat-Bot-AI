@@ -57,11 +57,12 @@ class ResponseEngine:
                     await db_ops.update_stats(api_calls=1, replies=1, tokens_used=len(user_prompt) + len(reply))
                     logger.info(f"AI reply via {provider.name}/{provider.model} ({latency:.0f}ms) for user {user_id}")
                     return reply[:cfg.MAX_REPLY_LENGTH]
-                except RateLimitedError:
-                    # 429 is account-wide — ALL free models will fail, stop immediately
-                    logger.error("Account rate limit hit, stopping fallback chain")
-                    await db_ops.update_stats(errors=1)
-                    return _RATE_LIMIT_MSG
+                except RateLimitedError as e:
+                    # OpenRouter 429 is account-wide — ALL free models will fail,
+                    # but TokenRouter may still work, so continue the chain.
+                    logger.error("OpenRouter account rate limit hit, trying other providers...")
+                    last_error = e
+                    continue
                 except Exception as e:
                     last_error = e
                     # Check for DEGRADED / 404 model error — try next model
